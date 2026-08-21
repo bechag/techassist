@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TechAssist — Assistance informatique à domicile & à distance</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://code.iconify.design/iconify-icon/1.0.7/iconify-icon.min.js"></script>
+  <script src="https://js.stripe.com/v3/"></script>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            forest: {
+              50:'#f2f8f6',100:'#e1efe8',200:'#c3dfd1',300:'#96c3ad',
+              400:'#6aa88a',500:'#478c6e',600:'#357158',700:'#2c5b48',
+              800:'#26493b',900:'#1d3930',950:'#0a1814'
+            }
+          },
+          fontFamily: { 'dm-sans': ['"DM Sans"','sans-serif'] }
+        }
+      }
+    }
+  </script>
+  <style>
+    *{font-family:'DM Sans',sans-serif}
+    html{scroll-behavior:smooth}
+    .reveal-on-scroll{opacity:0;transform:translateY(30px);transition:opacity 1s cubic-bezier(.2,.8,.2,1),transform 1s cubic-bezier(.2,.8,.2,1)}
+    .reveal-on-scroll.is-visible{opacity:1;transform:translateY(0)}
+    .step-section{display:none}
+    .step-section.active{display:block}
+    .problem-card{transition:all .3s ease}
+    .problem-card:hover{transform:scale(1.02)}
+    .problem-card.selected{border-color:#10b981!important;background:#f2f8f6!important}
+    .problem-card.selected .check-badge{display:flex}
+    .method-card{transition:all .3s ease}
+    .method-card:hover{transform:scale(1.02)}
+    .method-card.selected{border-color:#10b981!important;background:#f2f8f6!important}
+    .time-slot{transition:all .2s ease}
+    .time-slot:hover{border-color:#10b981;background:#f2f8f6}
+    .time-slot.selected{border-color:#10b981!important;background:#d1fae5!important;color:#022c22!important}
+    .progress-bar-fill{transition:width .6s cubic-bezier(.2,.8,.2,1)}
+    .toast{position:fixed;bottom:2rem;right:2rem;z-index:1000;padding:1rem 1.5rem;border-radius:1rem;background:#0a1814;color:#fff;font-size:14px;font-weight:500;transform:translateY(120%);opacity:0;transition:all .4s cubic-bezier(.2,.8,.2,1);max-width:380px}
+    .toast.show{transform:translateY(0);opacity:1}
+    .toast.error{background:#991b1b}
+    @keyframes pulse-glow{0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,.4)}50%{box-shadow:0 0 0 12px rgba(16,185,129,0)}}
+    .pulse-glow{animation:pulse-glow 2s infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .spinner{animation:spin .8s linear infinite}
+    .consent-check:checked+.consent-label{color:#10b981}
+    input:focus,textarea:focus,select:focus{outline:none;border-color:#10b981!important;box-shadow:0 0 0 3px rgba(16,185,129,.15)}
+    #card-element{padding:14px 16px;border:2px solid rgba(44,91,72,.15);border-radius:12px;background:#f2f8f6;transition:border-color .3s,box-shadow .3s}
+    #card-element.StripeElement--focus{border-color:#10b981;box-shadow:0 0 0 3px rgba(16,185,129,.15)}
+    #card-element.StripeElement--invalid{border-color:#ef4444}
+  </style>
+</head>
+<body class="bg-forest-50 text-forest-950 antialiased">
+
+  <div id="toast" class="toast"></div>
+
+  <!-- ═══════ NAVBAR ═══════ -->
+  <nav class="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-forest-50/70 border-b border-white/40">
+    <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+      <a href="#" onclick="goToStep(0);return false" class="flex items-center gap-2">
+        <div class="w-9 h-9 rounded-full bg-forest-950 flex items-center justify-center">
+          <iconify-icon icon="mdi:monitor-shimmer" class="text-emerald-400 text-lg"></iconify-icon>
+        </div>
+        <span class="text-lg font-semibold tracking-tight">TechAssist</span>
+      </a>
+      <div class="hidden md:flex items-center gap-6 text-sm font-medium text-forest-700">
+        <a href="#services" class="hover:text-emerald-600 transition-colors">Services</a>
+        <a href="#zones" class="hover:text-emerald-600 transition-colors">Zones</a>
+        <a href="#" onclick="goToStep(1);return false" class="bg-forest-950 text-white px-5 py-2.5 rounded-full hover:bg-forest-900 transition-colors">Prendre RDV</a>
+      </div>
+      <button class="md:hidden" onclick="document.getElementById('mobileMenu').classList.toggle('hidden')">
+        <iconify-icon icon="mdi:menu" class="text-2xl"></iconify-icon>
+      </button>
+    </div>
+    <div id="mobileMenu" class="hidden md:hidden px-6 pb-4 space-y-3 text-sm font-medium text-forest-700">
+      <a href="#services" class="block" onclick="document.getElementById('mobileMenu').classList.add('hidden')">Services</a>
+      <a href="#zones" class="block" onclick="document.getElementById('mobileMenu').classList.add('hidden')">Zones</a>
+      <a href="#" onclick="goToStep(1);document.getElementById('mobileMenu').classList.add('hidden');return false" class="block text-emerald-700 font-semibold">Prendre RDV</a>
+    </div>
+  </nav>
+
+  <!-- ═══════ PROGRESS BAR ═══════ -->
+  <div id="progressContainer" class="fixed top-[72px] left-0 right-0 z-40 bg-white/60 backdrop-blur-md border-b border-white/40 hidden">
+    <div class="max-w-3xl mx-auto px-6 py-3">
+      <div class="flex items-center justify-between mb-2">
+        <span id="stepLabel" class="text-xs font-semibold uppercase tracking-widest text-forest-600">Étape 1/5</span>
+        <span id="stepPercent" class="text-xs font-bold text-emerald-600">20%</span>
+      </div>
+      <div class="w-full h-1.5 bg-forest-100 rounded-full overflow-hidden">
+        <div id="progressBar" class="progress-bar-fill h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full" style="width:20%"></div>
+      </div>
+      <div class="flex justify-between mt-2 text-[10px] uppercase tracking-wider text-forest-400 font-medium">
+        <span id="s1" class="text-emerald-600">Problème</span>
+        <span id="s2">RDV</span>
+        <span id="s3">Paiement</span>
+        <span id="s4">Assistance</span>
+        <span id="s5">Confirmation</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ╔══════════════════════════════════════════╗ -->
+  <!-- ║           ÉTAPE 0 : ACCUEIL              ║ -->
+  <!-- ╚══════════════════════════════════════════╝ -->
+  <section id="step0" class="step-section active">
+
+    <!-- Hero -->
+    <div class="relative min-h-screen flex items-center overflow-hidden">
+      <div class="absolute inset-0">
+        <img src="https://picsum.photos/seed/techdesk2024/1920/1080.jpg" class="w-full h-full object-cover" style="filter:blur(24px) brightness(.35) saturate(.7)">
+        <div class="absolute inset-0 bg-gradient-to-t from-forest-950/90 via-forest-950/40 to-forest-950/20"></div>
+      </div>
+      <div class="relative z-10 max-w-7xl mx-auto px-6 pt-32 pb-20 grid lg:grid-cols-2 gap-12 items-center w-full">
+        <div>
+          <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-md border border-white/10 mb-8">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span class="text-[11px] font-bold uppercase tracking-widest text-emerald-300">Disponible maintenant</span>
+          </div>
+          <h1 class="text-5xl md:text-7xl lg:text-8xl font-light text-white leading-[.9] tracking-tighter mb-8">
+            Votre pc<br><span class="text-emerald-400">débloqué</span><br>en minutes
+          </h1>
+          <p class="text-lg text-forest-300 max-w-md mb-10 tracking-wide leading-relaxed">
+            Assistance informatique par téléphone, WhatsApp, visio ou prise en main à distance. Intervention physique en Seine-et-Marne (77) et Essonne (91).
+          </p>
+          <div class="flex flex-wrap gap-4">
+            <button onclick="goToStep(1)" class="group bg-emerald-500 text-white px-8 py-4 rounded-full font-semibold text-sm uppercase tracking-wider hover:bg-emerald-400 transition-all pulse-glow flex items-center gap-3">
+              Choisir mon problème
+              <iconify-icon icon="mdi:arrow-right" class="text-lg transition-transform group-hover:translate-x-1"></iconify-icon>
+            </button>
+            <a href="tel:+33600000000" class="flex items-center gap-2 px-6 py-4 rounded-full border border-white/20 text-white text-sm font-medium hover:bg-white/10 transition-colors">
+              <iconify-icon icon="mdi:phone" class="text-emerald-400"></iconify-icon>
+              Appeler maintenant
+            </a>
+          </div>
+        </div>
+        <div class="hidden lg:grid grid-cols-2 gap-4">
+          <div class="space-y-4">
+            <div class="bg-white/10 backdrop-blur-md border border-white/10 rounded-2xl p-6">
+              <iconify-icon icon="mdi:remote-desktop" class="text-3xl text-emerald-400 mb-3"></iconify-icon>
+              <h3 class="text-white font-semibold text-sm mb-1">Prise en main</h3>
+              <p class="text-forest-300 text-xs leading-relaxed">Contrôle à distance avec votre accord explicite</p>
+            </div>
+            <div class="bg-white/10 backdrop-blur-md border border-white/10 rounded-2xl p-6">
+              <iconify-icon icon="mdi:video" class="text-3xl text-emerald-400 mb-3"></iconify-icon>
+              <h3 class="text-white font-semibold text-sm mb-1">Visioconférence</h3>
+              <p class="text-forest-300 text-xs leading-relaxed">Guidage visuel en temps réel</p>
+            </div>
+          </div>
+          <div class="space-y-4 mt-8">
+            <div class="bg-white/10 backdrop-blur-md border border-white/10 rounded-2xl p-6">
+              <iconify-icon icon="mdi:whatsapp" class="text-3xl text-emerald-400 mb-3"></iconify-icon>
+              <h3 class="text-white font-semibold text-sm mb-1">WhatsApp</h3>
+              <p class="text-forest-300 text-xs leading-relaxed">Envoyez des captures, on vous guide</p>
+            </div>
+            <div class="bg-white/10 backdrop-blur-md border border-white/10 rounded-2xl p-6">
+              <iconify-icon icon="mdi:map-marker-radius" class="text-3xl text-emerald-400 mb-3"></iconify-icon>
+              <h3 class="text-white font-semibold text-sm mb-1">Sur place</h3>
+              <p class="text-forest-300 text-xs leading-relaxed">Intervention 77 & 91</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Services -->
+    <div id="services" class="max-w-7xl mx-auto px-6 py-24 reveal-on-scroll">
+      <div class="text-center mb-16">
+        <span class="text-[10px] font-bold uppercase tracking-[.25em] text-emerald-600 mb-4 block">Nos services</span>
+        <h2 class="text-4xl md:text-5xl font-light tracking-tighter">On s'occupe de <span class="text-emerald-500">tout</span></h2>
+      </div>
+      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div class="bg-white rounded-2xl p-8 border border-forest-200/50 hover:shadow-lg transition-shadow">
+          <div class="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center mb-5"><iconify-icon icon="mdi:speedometer-slow" class="text-2xl text-emerald-600"></iconify-icon></div>
+          <h3 class="font-semibold text-lg mb-2 tracking-tight">PC lent ou bloqué</h3>
+          <p class="text-forest-600 text-sm leading-relaxed">Optimisation, nettoyage, désinstallation des programmes inutiles.</p>
+        </div>
+        <div class="bg-white rounded-2xl p-8 border border-forest-200/50 hover:shadow-lg transition-shadow">
+          <div class="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center mb-5"><iconify-icon icon="mdi:wifi-off" class="text-2xl text-emerald-600"></iconify-icon></div>
+          <h3 class="font-semibold text-lg mb-2 tracking-tight">Problème de connexion</h3>
+          <p class="text-forest-600 text-sm leading-relaxed">Wi-Fi, Ethernet, configuration box, DNS, pare-feu.</p>
+        </div>
+        <div class="bg-white rounded-2xl p-8 border border-forest-200/50 hover:shadow-lg transition-shadow">
+          <div class="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center mb-5"><iconify-icon icon="mdi:shield-bug" class="text-2xl text-emerald-600"></iconify-icon></div>
+          <h3 class="font-semibold text-lg mb-2 tracking-tight">Virus & sécurité</h3>
+          <p class="text-forest-600 text-sm leading-relaxed">Suppression de malware, installation antivirus, audit sécurité.</p>
+        </div>
+        <div class="bg-white rounded-2xl p-8 border border-forest-200/50 hover:shadow-lg transition-shadow">
+          <div class="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center mb-5"><iconify-icon icon="mdi:package-variant-closed" class="text-2xl text-emerald-600"></iconify-icon></div>
+          <h3 class="font-semibold text-lg mb-2 tracking-tight">Installation logiciels</h3>
+          <p class="text-forest-600 text-sm leading-relaxed">Installation, mise à jour, configuration de tout type de logiciel.</p>
+        </div>
+        <div class="bg-white rounded-2xl p-8 border border-forest-200/50 hover:shadow-lg transition-shadow">
+          <div class="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center mb-5"><iconify-icon icon="mdi:cellphone" class="text-2xl text-emerald-600"></iconify-icon></div>
+          <h3 class="font-semibold text-lg mb-2 tracking-tight">Smartphone & tablette</h3>
+          <p class="text-forest-600 text-sm leading-relaxed">Android, iOS : configuration, transfert, sauvegarde, dépannage.</p>
+        </div>
+        <div class="bg-white rounded-2xl p-8 border border-forest-200/50 hover:shadow-lg transition-shadow">
+          <div class="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center mb-5"><iconify-icon icon="mdi:database-arrow-up" class="text-2xl text-emerald-600"></iconify-icon></div>
+          <h3 class="font-semibold text-lg mb-2 tracking-tight">Sauvegarde & données</h3>
+          <p class="text-forest-600 text-sm leading-relaxed">Récupération de fichiers, mise en place de sauvegardes automatiques.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Zones -->
+    <div id="zones" class="bg-forest-950 py-24 reveal-on-scroll">
+      <div class="max-w-7xl mx-auto px-6">
+        <div class="grid lg:grid-cols-2 gap-16 items-center">
+          <div>
+            <span class="text-[10px] font-bold uppercase tracking-[.25em] text-emerald-400 mb-4 block">Intervention physique</span>
+            <h2 class="text-4xl md:text-5xl font-light tracking-tighter text-white mb-6">Présent en <span class="text-emerald-400">77</span> & <span class="text-emerald-400">91</span></h2>
+            <p class="text-forest-300 text-lg leading-relaxed mb-8 max-w-md">Pour les problèmes nécessitant une présence physique, nous intervenons directement chez vous en Seine-et-Marne et dans l'Essonne.</p>
+            <div class="space-y-4">
+              <div class="flex items-start gap-3">
+                <iconify-icon icon="mdi:check-circle" class="text-emerald-400 text-xl mt-0.5"></iconify-icon>
+                <div><span class="text-white font-semibold text-sm">Seine-et-Marne (77)</span><p class="text-forest-400 text-sm">Melun, Chelles, Meaux, Pontault-Combault, Nemours, Fontainebleau…</p></div>
+              </div>
+              <div class="flex items-start gap-3">
+                <iconify-icon icon="mdi:check-circle" class="text-emerald-400 text-xl mt-0.5"></iconify-icon>
+                <div><span class="text-white font-semibold text-sm">Essonne (91)</span><p class="text-forest-400 text-sm">Évry-Courcouronnes, Massy, Palaiseau, Montlhéry, Dourdan…</p></div>
+              </div>
+            </div>
+          </div>
+          <div class="relative rounded-2xl overflow-hidden h-80 lg:h-[420px]">
+            <img src="https://picsum.photos/seed/parissuburb77/800/600.jpg" class="w-full h-full object-cover" style="filter:saturate(.7) contrast(1.1)">
+            <div class="absolute inset-0 bg-gradient-to-t from-forest-950/70 to-transparent"></div>
+            <div class="absolute bottom-6 left-6 right-6 flex gap-3">
+              <span class="px-4 py-2 bg-emerald-500/20 backdrop-blur-md border border-emerald-400/30 rounded-full text-emerald-300 text-xs font-bold uppercase tracking-wider">77</span>
+              <span class="px-4 py-2 bg-emerald-500/20 backdrop-blur-md border border-emerald-400/30 rounded-full text-emerald-300 text-xs font-bold uppercase tracking-wider">91</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CTA -->
+    <div class="max-w-7xl mx-auto px-6 py-24 text-center reveal-on-scroll">
+      <h2 class="text-4xl md:text-5xl font-light tracking-tighter mb-6">Prêt à être <span class="text-emerald-500">débloqué</span> ?</h2>
+      <p class="text-forest-600 text-lg mb-10 max-w-lg mx-auto">Premier diagnostic gratuit. Réponse en moins de 5 minutes.</p>
+      <button onclick="goToStep(1)" class="bg-forest-950 text-white px-10 py-4 rounded-full font-semibold text-sm uppercase tracking-wider hover:bg-forest-900 transition-colors inline-flex items-center gap-3">
+        Commencer maintenant <iconify-icon icon="mdi:arrow-right"></iconify-icon>
+      </button>
+    </div>
+  </section>
+
+  <!-- ╔══════════════════════════════════════════╗ -->
+  <!-- ║       ÉTAPE 1 : CHOISIR PROBLÈME         ║ -->
+  <!-- ╚══════════════════════════════════════════╝ -->
+  <section id="step1" class="step-section">
+    <div class="min-h-screen pt-36 pb-20">
+      <div class="max-w-4xl mx-auto px-6">
+        <button onclick="goToStep(0)" class="inline-flex items-center gap-2 text-sm text-forest-500 hover:text-emerald-600 transition-colors mb-8">
+          <iconify-icon icon="mdi:arrow-left"></iconify-icon> Retour à l'accueil
+        </button>
+        <span class="text-[10px] font-bold uppercase tracking-[.25em] text-emerald-600 mb-3 block">Étape 1/5</span>
+        <h1 class="text-4xl md:text-5xl font-light tracking-tighter mb-3">Quel est votre <span class="text-emerald-500">problème</span> ?</h1>
+        <p class="text-forest-600 text-lg mb-10">Sélectionnez la catégorie qui correspond le mieux.</p>
+
+        <div class="grid sm:grid-cols-2 gap-4 mb-10" id="problemGrid">
+          <div class="problem-card cursor-pointer bg-white rounded-2xl p-6 border-2 border-forest-200/50 relative" data-problem="PC lent ou bloqué" onclick="selectProblem(this)">
+            <div class="check-badge hidden absolute top-3 right-3 w-7 h-7 bg-emerald-500 rounded-full items-center justify-center"><iconify-icon icon="mdi:check" class="text-white text-sm"></iconify-icon></div>
+            <iconify-icon icon="mdi:speedometer-slow" class="text-3xl text-forest-400 mb-3"></iconify-icon>
+            <h3 class="font-semibold tracking-tight mb-1">PC lent ou bloqué</h3>
+            <p class="text-forest-500 text-sm">Lenteurs, freezes, écran bleu…</p>
+          </div>
+          <div class="problem-card cursor-pointer bg-white rounded-2xl p-6 border-2 border-forest-200/50 relative" data-problem="Problème de connexion internet" onclick="selectProblem(this)">
+            <div class="check-badge hidden absolute top-3 right-3 w-7 h-7 bg-emerald-500 rounded-full items-center justify-center"><iconify-icon icon="mdi:check" class="text-white text-sm"></iconify-icon></div>
+            <iconify-icon icon="mdi:wifi-off" class="text-3xl text-forest-400 mb-3"></iconify-icon>
+            <h3 class="font-semibold tracking-tight mb-1">Connexion internet</h3>
+            <p class="text-forest-500 text-sm">Wi-Fi, câble, box défaillante…</p>
+          </div>
+          <div class="problem-card cursor-pointer bg-white rounded-2xl p-6 border-2 border-forest-200/50 relative" data-problem="Virus ou problème de sécurité" onclick="selectProblem(this)">
+            <div class="check-badge hidden absolute top-3 right-3 w-7 h-7 bg-emerald-500 rounded-full items-center justify-center"><iconify-icon icon="mdi:check" class="text-white text-sm"></iconify-icon></div>
+            <iconify-icon icon="mdi:shield-bug" class="text-3xl text-forest-400 mb-3"></iconify-icon>
+            <h3 class="font-semibold tracking-tight mb-1">Virus & sécurité</h3>
+            <p class="text-forest-500 text-sm">Malware, pop-ups, piratage…</p>
+          </div>
+          <div class="problem-card cursor-pointer bg-white rounded-2xl p-6 border-2 border-forest-200/50 relative" data-problem="Installation de logiciel ou matériel" onclick="selectProblem(this)">
+            <div class="check-badge hidden absolute top-3 right-3 w-7 h-7 bg-emerald-500 rounded-full items-center justify-center"><iconify-icon icon="mdi:check" class="text-white text-sm"></iconify-icon></div>
+            <iconify-icon icon="mdi:package-variant-closed" class="text-3xl text-forest-400 mb-3"></iconify-icon>
+            <h3 class="font-semibold tracking-tight mb-1">Installation logiciel/matériel</h3>
+            <p class="text-forest-500 text-sm">Imprimante, périphérique, logiciel…</p>
+          </div>
+          <div class="problem-card cursor-pointer bg-white rounded-2xl p-6 border-2 border-forest-200/50 relative" data-problem="Problème smartphone ou tablette" onclick="selectProblem(this)">
+            <div class="check-badge hidden absolute top-3 right-3 w-7 h-7 bg-emerald-500 rounded-full items-center justify-center"><iconify-icon icon="mdi:check" class="text-white text-sm"></iconify-icon></div>
+            <iconify-icon icon="mdi:cellphone" class="text-3xl text-forest-400 mb-3"></iconify-icon>
+            <h3 class="font-semibold tracking-tight mb-1">Smartphone / Tablette</h3>
+            <p class="text-forest-500 text-sm">Android, iOS, configuration…</p>
+          </div>
+          <div class="problem-card cursor-pointer bg-white rounded-2xl p-6 border-2 border-forest-200/50 relative" data-problem="Sauvegarde ou récupération de données" onclick="selectProblem(this)">
+            <div class="check-badge hidden absolute top-3 right-3 w-7 h-7 bg-emerald-500 rounded-full items-center justify-center"><iconify-icon icon="mdi:check" class="text-white text-sm"></iconify-icon></div>
+            <iconify-icon icon="mdi:database-arrow-up" class="text-3xl text-forest-400 mb-3"></iconify-icon>
+            <h3 class="font-semibold tracking-tight mb-1">Sauvegarde de données</h3>
+            <p class="text-forest-500 text-sm">Récupération, backup, transfert…</p>
+          </div>
+        </div>
+
+        <div class="mb-8">
+          <label class="text-sm font-semibold text-forest-700 mb-2 block">Précisez votre problème <span class="text-forest-400 font-normal">(optionnel)</span></label>
+          <textarea id="problemDetail" rows="3" class="w-full bg-white border-2 border-forest-200/50 rounded-xl px-4 py-3 text-sm resize-none transition-all" placeholder="Décrivez votre problème en quelques mots..."></textarea>
+        </div>
+
+        <div class="flex justify-end">
+          <button id="btnStep1" onclick="goToStep(2)" disabled class="bg-forest-950 text-white px-8 py-4 rounded-full font-semibold text-sm uppercase tracking-wider hover:bg-forest-900 transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-3">
+            Continuer <iconify-icon icon="mdi:arrow-right"></iconify-icon>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ╔══════════════════════════════════════════╗ -->
+  <!-- ║        ÉTAPE 2 : RENDEZ-VOUS             ║ -->
+  <!-- ╚══════════════════════════════════════════╝ -->
+  <section id="step2" class="step-section">
+    <div class="min-h-screen pt-36 pb-20">
+      <div class="max-w-4xl mx-auto px-6">
+        <button onclick="goToStep(1)" class="inline-flex items-center gap-2 text-sm text-forest-500 hover:text-emerald-600 transition-colors mb-8">
+          <iconify-icon icon="mdi:arrow-left"></iconify-icon> Retour
+        </button>
+        <span class="text-[10px] font-bold uppercase tracking-[.25em] text-emerald-600 mb-3 block">Étape 2/5</span>
+        <h1 class="text-4xl md:text-5xl font-light tracking-tighter mb-3">Prendre <span class="text-emerald-500">rendez-vous</span></h1>
+        <p class="text-forest-600 text-lg mb-10">Choisissez la date et le créneau qui vous conviennent.</p>
+
+        <div class="grid lg:grid-cols-2 gap-8 mb-10">
+          <div class="space-y-5">
+            <div>
+              <label class="text-sm font-semibold text-forest-700 mb-2 block">Nom complet *</label>
+              <input id="userName" type="text" class="w-full bg-white border-2 border-forest-200/50 rounded-xl px-4 py-3 text-sm transition-all" placeholder="Jean Dupont">
+            </div>
+            <div>
+              <label class="text-sm font-semibold text-forest-700 mb-2 block">Téléphone *</label>
+              <input id="userPhone" type="tel" class="w-full bg-white border-2 border-forest-200/50 rounded-xl px-4 py-3 text-sm transition-all" placeholder="06 00 00 00 00">
+            </div>
+            <div>
+              <label class="text-sm font-semibold text-forest-700 mb-2 block">Email *</label>
+              <input id="userEmail" type="email" class="w-full bg-white border-2 border-forest-200/50 rounded-xl px-4 py-3 text-sm transition-all" placeholder="jean@exemple.fr">
+            </div>
+            <div>
+              <label class="text-sm font-semibold text-forest-700 mb-2 block">Ville / Code postal</label>
+              <input id="userCity" type="text" class="w-full bg-white border-2 border-forest-200/50 rounded-xl px-4 py-3 text-sm transition-all" placeholder="Ex : Melun 77000">
+            </div>
+          </div>
+          <div class="space-y-5">
+            <div>
+              <label class="text-sm font-semibold text-forest-700 mb-2 block">Date *</label>
+              <input id="rdvDate" type="date" class="w-full bg-white border-2 border-forest-200/50 rounded-xl px-4 py-3 text-sm transition-all" onchange="generateTimeSlots()">
+            </div>
+            <div>
+              <label class="text-sm font-semibold text-forest-700 mb-3 block">Créneau horaire *</label>
+              <div id="timeSlotsContainer" class="grid grid-cols-3 gap-2">
+                <div class="text-sm text-forest-400 col-span-3 py-4 text-center">Sélectionnez une date d'abord</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex justify-between">
+          <button onclick="goToStep(1)" class="text-forest-500 hover:text-emerald-600 text-sm font-medium transition-colors flex items-center gap-2"><iconify-icon icon="mdi:arrow-left"></iconify-icon> Précédent</button>
+          <button id="btnStep2" onclick="goToStep(3)" disabled class="bg-forest-950 text-white px-8 py-4 rounded-full font-semibold text-sm uppercase tracking-wider hover:bg-forest-900 transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-3">
+            Continuer <iconify-icon icon="mdi:arrow-right"></iconify-icon>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ╔══════════════════════════════════════════╗ -->
+  <!-- ║       ÉTAPE 3 : PAIEMENT STRIPE          ║ -->
+  <!-- ╚══════════════════════════════════════════╝ -->
+  <section id="step3" class="step-section">
+    <div class="min-h-screen pt-36 pb-20">
+      <div class="max-w-3xl mx-auto px-6">
+        <button onclick="goToStep(2)" class="inline-flex items-center gap-2 text-sm text-forest-500 hover:text-emerald-600 transition-colors mb-8">
+          <iconify-icon icon="mdi:arrow-left"></iconify-icon> Retour
+        </button>
+        <span class="text-[10px] font-bold uppercase tracking-[.25em] text-emerald-600 mb-3 block">Étape 3/5</span>
+        <h1 class="text-4xl md:text-5xl font-light tracking-tighter mb-3">Paiement <span class="text-emerald-500">sécurisé</span></h1>
+        <p class="text-forest-600 text-lg mb-10">Le diagnostic est gratuit. Vous ne payez qu'une fois le problème résolu.</p>
+
+        <!-- Récap -->
+        <div class="bg-white rounded-2xl p-6 border border-forest-200/50 mb-8">
+          <h3 class="font-semibold text-sm mb-4 text-forest-400 uppercase tracking-wider">Récapitulatif</h3>
+          <div class="space-y-3 text-sm">
+            <div class="flex justify-between"><span class="text-forest-500">Problème</span><span id="recapProblem" class="font-medium">—</span></div>
+            <div class="flex justify-between"><span class="text-forest-500">Date</span><span id="recapDate" class="font-medium">—</span></div>
+            <div class="flex justify-between"><span class="text-forest-500">Créneau</span><span id="recapTime" class="font-medium">—</span></div>
+            <div class="flex justify-between"><span class="text-forest-500">Nom</span><span id="recapName" class="font-medium">—</span></div>
+            <hr class="border-forest-100">
+            <div class="flex justify-between items-center">
+              <span class="text-forest-500">Forfait assistance à distance</span>
+              <span class="text-xl font-bold text-emerald-600">39 €</span>
+            </div>
+            <p class="text-xs text-forest-400">* Intervention physique en 77/91 : sur devis</p>
+          </div>
+        </div>
+
+        <!-- Stripe Elements -->
+        <div class="bg-white rounded-2xl p-6 border border-forest-200/50 mb-8">
+          <div class="flex items-center gap-3 mb-6">
+            <iconify-icon icon="mdi:lock" class="text-emerald-500"></iconify-icon>
+            <span class="text-sm font-semibold">Paiement par carte bancaire</span>
+            <div class="ml-auto flex gap-2">
+              <iconify-icon icon="logos:visa" class="text-2xl"></iconify-icon>
+              <iconify-icon icon="logos:mastercard" class="text-2xl"></iconify-icon>
+            </div>
+          </div>
+          <div>
+            <label class="text-sm font-medium text-forest-600 mb-1.5 block">Coordonnées bancaires</label>
+            <div id="card-element">
+              <div class="py-3 px-2 text-forest-400 text-sm">Chargement du formulaire sécurisé…</div>
+            </div>
+            <p id="card-errors" class="text-red-500 text-xs mt-2 hidden"></p>
+          </div>
+          <div class="flex items-center gap-2 mt-4 text-xs text-forest-400">
+            <iconify-icon icon="mdi:shield-check" class="text-emerald-500"></iconify-icon>
+            Chiffrement SSL 256 bits · Conforme PCI-DSS · Sécurisé par Stripe
+          </div>
+        </div>
+
+        <div class="flex justify-between">
+          <button onclick="goToStep(2)" class="text-forest-500 hover:text-emerald-600 text-sm font-medium transition-colors flex items-center gap-2"><iconify-icon icon="mdi:arrow-left"></iconify-icon> Précédent</button>
+          <button id="btnPay" onclick="handlePayment()" class="bg-emerald-500 text-white px-8 py-4 rounded-full font-semibold text-sm uppercase tracking-wider hover:bg-emerald-400 transition-all flex items-center gap-3">
+            <span id="payBtnContent"><iconify-icon icon="mdi:lock" class="text-base"></iconify-icon> Payer 39 €</span>
+            <span id="payBtnLoading" class="hidden flex items-center gap-2"><iconify-icon icon="mdi:loading" class="text-lg spinner"></iconify-icon> Traitement…</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ╔══════════════════════════════════════════╗ -->
+  <!-- ║       ÉTAPE 4 : MODE ASSISTANCE          ║ -->
+  <!-- ╚══════════════════════════════════════════╝ -->
+  <section id="step4" class="step-section">
+    <div class="min-h-screen pt-36 pb-20">
+      <div class="max-w-4xl mx-auto px-6">
+        <button onclick="goToStep(3)" class="inline-flex items-center gap-2 text-sm text-forest-500 hover:text-emerald-600 transition-colors mb-8">
+          <iconify-icon icon="mdi:arrow-left"></iconify-icon> Retour
+        </button>
+        <span class="text-[10px] font-bold uppercase tracking-[.25em] text-emerald-600 mb-3 block">Étape 4/5</span>
+        <h1 class="text-4xl md:text-5xl font-light tracking-tighter mb-3">Mode d'<span class="text-emerald-500">assistance</span></h1>
+        <p class="text-forest-600 text-lg mb-10">Choisissez comment vous souhaitez être aidé.</p>
+
+        <div class="grid sm:grid-cols-2 gap-4 mb-8" id="methodGrid">
+          <div class="method-card cursor-pointer bg-white rounded-2xl p-6 border-2 border-forest-200/50 relative" data-method="telephone" onclick="selectMethod(this)">
+            <iconify-icon icon="mdi:phone-in-talk" class="text-3xl text-forest-400 mb-3"></iconify-icon>
+            <h3 class="font-semibold tracking-tight mb-1">Téléphone</h3>
+            <p class="text-forest-500 text-sm">On vous guide vocalement étape par étape.</p>
+            <span class="absolute top-3 right-3 text-[10px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">Rapide</span>
+          </div>
+          <div class="method-card cursor-pointer bg-white rounded-2xl p-6 border-2 border-forest-200/50 relative" data-method="whatsapp" onclick="selectMethod(this)">
+            <iconify-icon icon="mdi:whatsapp" class="text-3xl text-emerald-500 mb-3"></iconify-icon>
+            <h3 class="font-semibold tracking-tight mb-1">WhatsApp</h3>
+            <p class="text-forest-500 text-sm">Captures d'écran + guidage en direct.</p>
+            <span class="absolute top-3 right-3 text-[10px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">Pratique</span>
+          </div>
+          <div class="method-card cursor-pointer bg-white rounded-2xl p-6 border-2 border-forest-200/50 relative" data-method="visio" onclick="selectMethod(this)">
+            <iconify-icon icon="mdi:video" class="text-3xl text-forest-400 mb-3"></iconify-icon>
+            <h3 class="font-semibold tracking-tight mb-1">Visioconférence</h3>
+            <p class="text-forest-500 text-sm">On voit votre écran, on vous montre.</p>
+            <span class="absolute top-3 right-3 text-[10px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">Visuel</span>
+          </div>
+          <div class="method-card cursor-pointer bg-white rounded-2xl p-6 border-2 border-forest-200/50 relative" data-method="remote" onclick="selectMethod(this)">
+            <iconify-icon icon="mdi:remote-desktop" class="text-3xl text-forest-400 mb-3"></iconify-icon>
+            <h3 class="font-semibold tracking-tight mb-1">Prise en main à distance</h3>
+            <p class="text-forest-500 text-sm">On pilote votre PC avec votre accord.</p>
+            <span class="absolute top-3 right-3 text-[10px] font-bold uppercase tracking-wider text-amber-600 bg-amber-50 px-2 py-1 rounded-full">Consentement</span>
+          </div>
+          <div class="method-card cursor-pointer bg-white rounded-2xl p-6 border-2 border-forest-200/50 relative sm:col-span-2" data-method="physical" onclick="selectMethod(this)">
+            <div class="flex items-start gap-4">
+              <iconify-icon icon="mdi:map-marker-radius" class="text-3xl text-forest-400 flex-shrink-0"></iconify-icon>
+              <div>
+                <h3 class="font-semibold tracking-tight mb-1">Intervention physique</h3>
+                <p class="text-forest-500 text-sm">Déplacement à domicile en Seine-et-Marne (77) et Essonne (91). Supplément selon distance.</p>
+              </div>
+            </div>
+            <span class="absolute top-3 right-3 text-[10px] font-bold uppercase tracking-wider text-forest-600 bg-forest-50 px-2 py-1 rounded-full">77 & 91</span>
+          </div>
+        </div>
+
+        <!-- Consentement prise en main -->
+        <div id="consentBlock" class="hidden bg-amber-50 border-2 border-amber-200 rounded-2xl p-6 mb-8">
+          <div class="flex items-start gap-3">
+            <iconify-icon icon="mdi:alert-circle" class="text-amber-500 text-xl mt-0.5 flex-shrink-0"></iconify-icon>
+            <div>
+              <h4 class="font-semibold text-amber-800 mb-2">Consentement explicite requis</h4>
+              <p class="text-amber-700 text-sm leading-relaxed mb-4">
+                La prise en main à distance donne accès temporairement à votre écran et à vos fichiers. Vous gardez le contrôle à tout moment et pouvez interrompre la session immédiatement. Aucune donnée personnelle ne sera copiée ou stockée.
+              </p>
+              <label class="flex items-start gap-3 cursor-pointer">
+                <input id="consentCheck" type="checkbox" class="consent-check mt-1 w-4 h-4 accent-emerald-500 cursor-pointer" onchange="checkStep4()">
+                <span class="consent-label text-sm text-amber-800 font-medium transition-colors">
+                  J'accepte expressément la prise en main à distance de mon appareil. Je comprends que je peux y mettre fin à tout moment.
+                </span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex justify-between">
+          <button onclick="goToStep(3)" class="text-forest-500 hover:text-emerald-600 text-sm font-medium transition-colors flex items-center gap-2"><iconify-icon icon="mdi:arrow-left"></iconify-icon> Précédent</button>
+          <button id="btnStep4" onclick="goToStep(5)" disabled class="bg-forest-950 text-white px-8 py-4 rounded-full font-semibold text-sm uppercase tracking-wider hover:bg-forest-900 transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-3">
+            Lancer l'assistance <iconify-icon icon="mdi:arrow-right"></iconify-icon>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ╔══════════════════════════════════════════╗ -->
+  <!-- ║        ÉTAPE 5 : CONFIRMATION            ║ -->
+  <!-- ╚══════════════════════════════════════════╝ -->
+  <section id="step5" class="step-section">
+    <div class="min-h-screen pt-36 pb-20 flex items-center">
+      <div class="max-w-2xl mx-auto px-6 text-center">
+        <div class="w-20 h-20 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-8">
+          <iconify-icon icon="mdi:check-circle" class="text-4xl text-emerald-500"></iconify-icon>
+        </div>
+        <h1 class="text-4xl md:text-5xl font-light tracking-tighter mb-4">C'est <span class="text-emerald-500">confirmé</span> !</h1>
+        <p class="text-forest-600 text-lg mb-10 max-w-md mx-auto">Votre rendez-vous est enregistré. Vous allez recevoir un récapitulatif par email et SMS.</p>
+
+        <div class="bg-white rounded-2xl p-8 border border-forest-200/50 text-left mb-10">
+          <h3 class="font-semibold text-sm mb-5 text-forest-400 uppercase tracking-wider text-center">Votre rendez-vous</h3>
+          <div class="space-y-4 text-sm">
+            <div class="flex items-center gap-3">
+              <iconify-icon icon="mdi:wrench" class="text-emerald-500 text-lg"></iconify-icon>
+              <span class="text-forest-500 w-28">Problème</span>
+              <span id="finalProblem" class="font-medium">—</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <iconify-icon icon="mdi:calendar" class="text-emerald-500 text-lg"></iconify-icon>
+              <span class="text-forest-500 w-28">Date & heure</span>
+              <span id="finalDateTime" class="font-medium">—</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <iconify-icon icon="mdi:account" class="text-emerald-500 text-lg"></iconify-icon>
+              <span class="text-forest-500 w-28">Nom</span>
+              <span id="finalName" class="font-medium">—</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <iconify-icon icon="mdi:headset" class="text-emerald-500 text-lg"></iconify-icon>
+              <span class="text-forest-500 w-28">Assistance</span>
+              <span id="finalMethod" class="font-medium">—</span>
+            </div>
+            <hr class="border-forest-100">
+            <div class="flex items-center gap-3">
+              <iconify-icon icon="mdi:credit-card-check" class="text-emerald-500 text-lg"></iconify-icon>
+              <span class="text-forest-500 w-28">Paiement</span>
+              <span class="font-bold text-emerald-600">39 € payés ✓</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="connectButtons" class="space-y-3 mb-10">
+          <p class="text-sm font-semibold text-forest-600 uppercase tracking-wider mb-4">Démarrer maintenant</p>
+          <div id="connectPhone" class="hidden">
+            <a href="tel:+33600000000" class="w-full bg-emerald-500 text-white px-8 py-4 rounded-full font-semibold text-sm uppercase tracking-wider hover:bg-emerald-400 transition-all flex items-center justify-center gap-3">
+              <iconify-icon icon="mdi:phone" class="text-lg"></iconify-icon> Appeler le technicien
+            </a>
+          </div>
+          <div id="connectWhatsapp" class="hidden">
+            <a href="https://wa.me/33600000000?text=Bonjour%2C%20j%27ai%20un%20rendez-vous%20TechAssist." target="_blank" class="w-full bg-emerald-600 text-white px-8 py-4 rounded-full font-semibold text-sm uppercase tracking-wider hover:bg-emerald-500 transition-all flex items-center justify-center gap-3">
+              <iconify-icon icon="mdi:whatsapp" class="text-lg"></iconify-icon> Ouvrir WhatsApp
+            </a>
+          </div>
+          <div id="connectVisio" class="hidden">
+            <button onclick="showToast('🔗 Le lien de visioconférence sera envoyé par email 5 min avant le créneau.')" class="w-full bg-forest-950 text-white px-8 py-4 rounded-full font-semibold text-sm uppercase tracking-wider hover:bg-forest-900 transition-all flex items-center justify-center gap-3">
+              <iconify-icon icon="mdi:video" class="text-lg"></iconify-icon> Rejoindre la visio
+            </button>
+          </div>
+          <div id="connectRemote" class="hidden">
+            <button onclick="showToast('🔗 Le lien de prise en main sera envoyé par email avec un code unique à 6 chiffres.')" class="w-full bg-forest-950 text-white px-8 py-4 rounded-full font-semibold text-sm uppercase tracking-wider hover:bg-forest-900 transition-all flex items-center justify-center gap-3">
+              <iconify-icon icon="mdi:remote-desktop" class="text-lg"></iconify-icon> Lancer la prise en main
+            </button>
+          </div>
+          <div id="connectPhysical" class="hidden">
+            <div class="bg-forest-100 rounded-2xl p-6 text-left">
+              <div class="flex items-start gap-3">
+                <iconify-icon icon="mdi:map-marker" class="text-emerald-500 text-xl mt-0.5"></iconify-icon>
+                <div>
+                  <p class="text-sm font-semibold text-forest-800">Intervention à domicile</p>
+                  <p class="text-sm text-forest-600 mt-1">Le technicien se déplace à l'adresse indiquée. Vous recevrez un SMS avec le nom du technicien et son numéro.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button onclick="goToStep(0)" class="text-forest-500 hover:text-emerald-600 text-sm font-medium transition-colors inline-flex items-center gap-2">
+          <iconify-icon icon="mdi:home"></iconify-icon> Retour à l'accueil
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════ FOOTER ═══════ -->
+  <footer class="bg-forest-950 py-16 border-t border-white/5">
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="grid md:grid-cols-4 gap-10 mb-12">
+        <div class="md:col-span-2">
+          <div class="flex items-center gap-2 mb-4">
+            <div class="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center"><iconify-icon icon="mdi:monitor-shimmer" class="text-emerald-400"></iconify-icon></div>
+            <span class="text-white font-semibold">TechAssist</span>
+          </div>
+          <p class="text-forest-400 text-sm leading-relaxed max-w-sm">Assistance informatique à distance et à domicile. Réactive, fiable, transparente.</p>
+        </div>
+        <div>
+          <h4 class="text-white font-semibold text-sm mb-4">Contact</h4>
+          <div class="space-y-2 text-sm text-forest-400">
+            <a href="tel:+33600000000" class="flex items-center gap-2 hover:text-emerald-400 transition-colors"><iconify-icon icon="mdi:phone"></iconify-icon> 06 00 00 00 00</a>
+            <a href="https://wa.me/33600000000" target="_blank" class="flex items-center gap-2 hover:text-emerald-400 transition-colors"><iconify-icon icon="mdi:whatsapp"></iconify-icon> WhatsApp</a>
+            <a href="mailto:contact@techassist.fr" class="flex items-center gap-2 hover:text-emerald-400 transition-colors"><iconify-icon icon="mdi:email"></iconify-icon> contact@techassist.fr</a>
+          </div>
+        </div>
+        <div>
+          <h4 class="text-white font-semibold text-sm mb-4">Zones</h4>
+          <div class="space-y-2 text-sm text-forest-400">
+            <p>Seine-et-Marne (77)</p>
+            <p>Essonne (91)</p>
+            <p class="text-emerald-400 text-xs mt-2">+ France entière à distance</p>
+          </div>
+        </div>
+      </div>
+      <div class="border-t border-white/10 pt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-forest-500">
+        <p>© 2025 TechAssist. Tous droits réservés.</p>
+        <div class="flex gap-4">
+          <a href="#" class="hover:text-emerald-400 transition-colors">Mentions légales</a>
+          <a href="#" class="hover:text-emerald-400 transition-colors">CGV</a>
+          <a href="#" class="hover:text-emerald-400 transition-colors">Confidentialité</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!--                 JAVASCRIPT                     -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <script>
+    // ── CONFIG ──
+    const STRIPE_PK = 'pk_test_VOTRE_CLE_PUBLIQUE_ICI';
+
+    // ── INIT STRIPE ──
+    let stripe, elements, cardElement, clientSecret = null;
+    try { stripe = Stripe(STRIPE_PK); } catch(e) { console.warn('Stripe non initialisé :', e); }
+
+    // ── STATE ──
+    let currentStep = 0;
+    let selectedProblem = '';
+    let selectedMethod = '';
+    let selectedTime = '';
+    let paymentSucceeded = false;
+
+    // ── NAVIGATION ──
+    function goToStep(step) {
+      if ((step === 4 || step === 5) && !paymentSucceeded && step !== 0) {
+        showToast('Veuillez d\'abord effectuer le paiement.', 'error');
+        return;
+      }
+      document.querySelectorAll('.step-section').forEach(s => s.classList.remove('active'));
+      const target = document.getElementById('step' + step);
+      if (target) { target.classList.add('active'); currentStep = step; }
+      const pc = document.getElementById('progressContainer');
+      if (step >= 1 && step <= 4) { pc.classList.remove('hidden'); updateProgress(step); }
+      else { pc.classList.add('hidden'); }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (step === 3) { fillRecap(); initStripeElements(); }
+      if (step === 5) fillFinal();
+    }
+
+    function updateProgress(step) {
+      const pct = step * 20;
+      document.getElementById('progressBar').style.width = pct + '%';
+      document.getElementById('stepLabel').textContent = 'Étape ' + step + '/5';
+      document.getElementById('stepPercent').textContent = pct + '%';
+      for (let i = 1; i <= 5; i++) {
+        const el = document.getElementById('s' + i);
+        if (el) el.className = i <= step ? 'text-emerald-600' : '';
+      }
+    }
+
+    // ── STEP 1 : PROBLÈME ──
+    function selectProblem(el) {
+      document.querySelectorAll('.problem-card').forEach(c => c.classList.remove('selected'));
+      el.classList.add('selected');
+      selectedProblem = el.dataset.problem;
+      document.getElementById('btnStep1').disabled = false;
+    }
+
+    // ── STEP 2 : RDV ──
+    function generateTimeSlots() {
+      const dateInput = document.getElementById('rdvDate');
+      const container = document.getElementById('timeSlotsContainer');
+      if (!dateInput.value) {
+        container.innerHTML = '<div class="text-sm text-forest-400 col-span-3 py-4 text-center">Sélectionnez une date d\'abord</div>';
+        return;
+      }
+      const selected = new Date(dateInput.value);
+      const today = new Date(); today.setHours(0,0,0,0);
+      if (selected < today) {
+        container.innerHTML = '<div class="text-sm text-red-500 col-span-3 py-4 text-center">Veuillez choisir une date future</div>';
+        return;
+      }
+      const slots = ['09:00','09:30','10:00','10:30','11:00','11:30','14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00','18:30','19:00'];
+      const isToday = selected.getTime() === today.getTime();
+      const nowH = new Date().getHours(), nowM = new Date().getMinutes();
+      container.innerHTML = '';
+      slots.forEach(slot => {
+        const [h, m] = slot.split(':').map(Number);
+        if (isToday && (h < nowH || (h === nowH && m <= nowM))) return;
+        const div = document.createElement('div');
+        div.className = 'time-slot cursor-pointer text-center py-2.5 px-2 rounded-xl border-2 border-forest-200/50 text-sm font-medium text-forest-700';
+        div.textContent = slot;
+        div.onclick = function() {
+          document.querySelectorAll('.time-slot').forEach(s => s.classList.remove('selected'));
+          this.classList.add('selected');
+          selectedTime = slot;
+          checkStep2();
+        };
+        container.appendChild(div);
+      });
+      if (!container.children.length) {
+        container.innerHTML = '<div class="text-sm text-forest-400 col-span-3 py-4 text-center">Plus de créneaux disponibles aujourd\'hui</div>';
+      }
+    }
+
+    (function() {
+      const d = new Date();
+      document.getElementById('rdvDate').setAttribute('min', d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'));
+    })();
+
+    function checkStep2() {
+      const n = document.getElementById('userName').value.trim();
+      const p = document.getElementById('userPhone').value.trim();
+      const e = document.getElementById('userEmail').value.trim();
+      const d = document.getElementById('rdvDate').value;
+      document.getElementById('btnStep2').disabled = !(n && p && e && d && selectedTime);
+    }
+    ['userName','userPhone','userEmail','rdvDate'].forEach(id => {
+      document.getElementById(id).addEventListener('input', checkStep2);
+    });
+
+    // ── STEP 3 : STRIPE ──
+    function fillRecap() {
+      document.getElementById('recapProblem').textContent = selectedProblem || '—';
+      const dv = document.getElementById('rdvDate').value;
+      if (dv) {
+        const d = new Date(dv);
+        document.getElementById('recapDate').textContent = d.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+      }
+      document.getElementById('recapTime').textContent = selectedTime || '—';
+      document.getElementById('recapName').textContent = document.getElementById('userName').value || '—';
+    }
+
+    let stripeInitialized = false;
+
+    function initStripeElements() {
+      if (!stripe || stripeInitialized) return;
+      stripeInitialized = true;
+
+      document.getElementById('card-element').innerHTML = '<div class="py-3 px-2 text-forest-400 text-sm">Chargement du formulaire sécurisé…</div>';
+
+      fetch('/create-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: 3900,
+          problem: selectedProblem,
+          name: document.getElementById('userName').value,
+          email: document.getElementById('userEmail').value,
+          phone: document.getElementById('userPhone').value,
+          date: document.getElementById('rdvDate').value,
+          time: selectedTime,
+          method: 'pending'
+        })
+      })
+      .then(res => { if (!res.ok) throw new Error('Erreur serveur ' + res.status); return res.json(); })
+      .then(data => {
+        clientSecret = data.clientSecret;
+        elements = stripe.elements({
+          clientSecret: clientSecret,
+          appearance: {
+            theme: 'stripe',
+            variables: {
+              colorPrimary: '#10b981',
+              colorBackground: '#f2f8f6',
+              colorText: '#022c22',
+              fontFamily: '"DM Sans", sans-serif',
+              borderRadius: '8px'
+            }
+          }
+        });
+        cardElement = elements.create('payment', {
+          fields: { billingDetails: { name:'never', email:'never', phone:'never', address:'never' } }
+        });
+        cardElement.mount('#card-element');
+        cardElement.on('change', function(event) {
+          const errEl = document.getElementById('card-errors');
+          if (event.error) { errEl.textContent = event.error.message; errEl.classList.remove('hidden'); }
+          else { errEl.classList.add('hidden'); }
+        });
+      })
+      .catch(err => {
+        console.error('Erreur init Stripe:', err);
+        document.getElementById('card-element').innerHTML =
+          '<div class="py-4 px-4 text-red-500 text-sm bg-red-50 rounded-xl">Impossible de charger le paiement sécurisé. Vérifiez que le serveur est lancé et votre clé Stripe configurée.</div>';
+      });
+    }
+
+    async function handlePayment() {
+      if (!stripe || !elements || !clientSecret) {
+        showToast('Le paiement n\'est pas encore prêt. Patientez…', 'error');
+        return;
+      }
+      const btnPay = document.getElementById('btnPay');
+      btnPay.disabled = true;
+      document.getElementById('payBtnContent').classList.add('hidden');
+      document.getElementById('payBtnLoading').classList.remove('hidden');
+
+      const { error } = await stripe.confirmPayment({
+        elements,
+        confirmParams: {
+          return_url: window.location.origin + window.location.pathname + '?payment=success'
+        }
+      });
+
+      btnPay.disabled = false;
+      document.getElementById('payBtnContent').classList.remove('hidden');
+      document.getElementById('payBtnLoading').classList.add('hidden');
+
+      if (error) {
+        document.getElementById('card-errors').textContent = error.message;
+        document.getElementById('card-errors').classList.remove('hidden');
+        showToast('Paiement refusé : ' + error.message, 'error');
+      }
+    }
+
+    // Detection du retour après paiement
+    (function() {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('payment') === 'success' && params.get('redirect_status') === 'succeeded') {
+        paymentSucceeded = true;
+        window.history.replaceState({}, '', window.location.pathname);
+        setTimeout(() => goToStep(5), 300);
+      }
+    })();
+
+    // ── STEP 4 : ASSISTANCE ──
+    function selectMethod(el) {
+      document.querySelectorAll('.method-card').forEach(c => c.classList.remove('selected'));
+      el.classList.add('selected');
+      selectedMethod = el.dataset.method;
+      const cb = document.getElementById('consentBlock');
+      if (selectedMethod === 'remote') { cb.classList.remove('hidden'); document.getElementById('consentCheck').checked = false; }
+      else { cb.classList.add('hidden'); }
+      checkStep4();
+    }
+
+    function checkStep4() {
+      if (!selectedMethod) { document.getElementById('btnStep4').disabled = true; return; }
+      document.getElementById('btnStep4').disabled = (selectedMethod === 'remote' && !document.getElementById('consentCheck').checked);
+    }
+
+    // ── STEP 5 : FINAL ──
+    function fillFinal() {
+      document.getElementById('finalProblem').textContent = selectedProblem;
+      const dv = document.getElementById('rdvDate').value;
+      if (dv) {
+        const d = new Date(dv);
+        document.getElementById('finalDateTime').textContent = d.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'}) + ' à ' + selectedTime;
+      }
+      document.getElementById('finalName').textContent = document.getElementById('userName').value;
+      const labels = { telephone:'📞 Par téléphone', whatsapp:'💬 Par WhatsApp', visio:'🎥 Par visioconférence', remote:'🖥️ Prise en main à distance', physical:'🏠 Intervention physique' };
+      document.getElementById('finalMethod').textContent = labels[selectedMethod] || selectedMethod;
+      ['connectPhone','connectWhatsapp','connectVisio','connectRemote','connectPhysical'].forEach(id => document.getElementById(id).classList.add('hidden'));
+      const map = { telephone:'connectPhone', whatsapp:'connectWhatsapp', visio:'connectVisio', remote:'connectRemote', physical:'connectPhysical' };
+      if (map[selectedMethod]) document.getElementById(map[selectedMethod]).classList.remove('hidden');
+    }
+
+    // ── TOAST ──
+    function showToast(msg, type) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = 'toast' + (type === 'error' ? ' error' : '');
+      requestAnimationFrame(() => t.classList.add('show'));
+      setTimeout(() => t.classList.remove('show'), 4000);
+    }
+
+    // ── SCROLL REVEAL ──
+    const obs = new IntersectionObserver(entries => {
+      entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('is-visible'); });
+    }, { threshold: 0.1 });
+    document.querySelectorAll('.reveal-on-scroll').forEach(el => obs.observe(el));
+  </script>
+</body>
+</html>
