@@ -567,35 +567,26 @@
   <!--              JAVASCRIPT                   -->
   <!-- ══════════════════════════════════════════ -->
   <script>
-    const STRIPE_PK = 'pk_test_51U6oxGPkH5XXLn4AB8i75QkqHzMWkLUu8fxqqEYF0IkAnez2Oiw3E76QW8zAc8t54faMMALtnHnx4NjW2sUa3mKa00fN8FsJRP';
+   const STRIPE_PK = 'pk_test_51U6oxGPkH5XXLn4AB8i75QkqHzMWkLUu8fxqqEYF0IkAnez2Oiw3E76QW8zAc8t54faMMALtnHnx4NjW2sUa3mKa00fN8FsJRP';
 
-let stripe, elements, cardElement, clientSecret = null;
+var stripe, elements, cardElement, clientSecret = null;
 try { stripe = Stripe(STRIPE_PK); } catch(e) { console.warn('Stripe non initialisé :', e); }
 
-let currentStep = 0;
-let selectedProblem = '';
-let selectedMethod = '';
-let selectedTime = '';
-let paymentSucceeded = false;
-
-// ── DÉTECTION RETOUR STRIPE (après redirect 3D-Secure) ──
-(function() {
-  const params = new URLSearchParams(window.location.search);
-  if (params.get('redirect_status') === 'succeeded') {
-    paymentSucceeded = true;
-    window.history.replaceState({}, '', window.location.pathname);
-  }
-})();
+var currentStep = 0;
+var selectedProblem = '';
+var selectedMethod = '';
+var selectedTime = '';
+var paymentSucceeded = false;
 
 function goToStep(step) {
   if ((step === 4 || step === 5) && !paymentSucceeded && step !== 0) {
     showToast('Veuillez d\'abord effectuer le paiement.', 'error');
     return;
   }
-  document.querySelectorAll('.step-section').forEach(s => s.classList.remove('active'));
-  const target = document.getElementById('step' + step);
+  document.querySelectorAll('.step-section').forEach(function(s) { s.classList.remove('active'); });
+  var target = document.getElementById('step' + step);
   if (target) { target.classList.add('active'); currentStep = step; }
-  const pc = document.getElementById('progressContainer');
+  var pc = document.getElementById('progressContainer');
   if (step >= 1 && step <= 4) { pc.classList.remove('hidden'); updateProgress(step); }
   else { pc.classList.add('hidden'); }
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -603,56 +594,50 @@ function goToStep(step) {
   if (step === 5) fillFinal();
 }
 
-// ── Si on revient d'un paiement réussi, aller direct à l'étape 4 ──
-if (paymentSucceeded) {
-  document.addEventListener('DOMContentLoaded', function() {
-    setTimeout(function() { goToStep(4); }, 300);
-  });
-}
-
 function updateProgress(step) {
-  const pct = step * 20;
+  var pct = step * 20;
   document.getElementById('progressBar').style.width = pct + '%';
   document.getElementById('stepLabel').textContent = 'Étape ' + step + '/5';
   document.getElementById('stepPercent').textContent = pct + '%';
-  for (let i = 1; i <= 5; i++) {
-    const el = document.getElementById('s' + i);
+  for (var i = 1; i <= 5; i++) {
+    var el = document.getElementById('s' + i);
     if (el) el.className = i <= step ? 'text-emerald-600' : '';
   }
 }
 
 function selectProblem(el) {
-  document.querySelectorAll('.problem-card').forEach(c => c.classList.remove('selected'));
+  document.querySelectorAll('.problem-card').forEach(function(c) { c.classList.remove('selected'); });
   el.classList.add('selected');
   selectedProblem = el.dataset.problem;
   document.getElementById('btnStep1').disabled = false;
 }
 
 function generateTimeSlots() {
-  const dateInput = document.getElementById('rdvDate');
-  const container = document.getElementById('timeSlotsContainer');
+  var dateInput = document.getElementById('rdvDate');
+  var container = document.getElementById('timeSlotsContainer');
   if (!dateInput.value) {
     container.innerHTML = '<div class="text-sm text-forest-400 col-span-3 py-4 text-center">Sélectionnez une date d\'abord</div>';
     return;
   }
-  const selected = new Date(dateInput.value);
-  const today = new Date(); today.setHours(0,0,0,0);
+  var selected = new Date(dateInput.value);
+  var today = new Date(); today.setHours(0,0,0,0);
   if (selected < today) {
     container.innerHTML = '<div class="text-sm text-red-500 col-span-3 py-4 text-center">Veuillez choisir une date future</div>';
     return;
   }
-  const slots = ['09:00','09:30','10:00','10:30','11:00','11:30','14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00','18:30','19:00'];
-  const isToday = selected.getTime() === today.getTime();
-  const nowH = new Date().getHours(), nowM = new Date().getMinutes();
+  var slots = ['09:00','09:30','10:00','10:30','11:00','11:30','14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00','18:30','19:00'];
+  var isToday = selected.getTime() === today.getTime();
+  var nowH = new Date().getHours(), nowM = new Date().getMinutes();
   container.innerHTML = '';
-  slots.forEach(slot => {
-    const [h, m] = slot.split(':').map(Number);
+  slots.forEach(function(slot) {
+    var parts = slot.split(':');
+    var h = parseInt(parts[0]), m = parseInt(parts[1]);
     if (isToday && (h < nowH || (h === nowH && m <= nowM))) return;
-    const div = document.createElement('div');
+    var div = document.createElement('div');
     div.className = 'time-slot cursor-pointer text-center py-2.5 px-2 rounded-xl border-2 border-forest-200/50 text-sm font-medium text-forest-700';
     div.textContent = slot;
     div.onclick = function() {
-      document.querySelectorAll('.time-slot').forEach(s => s.classList.remove('selected'));
+      document.querySelectorAll('.time-slot').forEach(function(s) { s.classList.remove('selected'); });
       this.classList.add('selected');
       selectedTime = slot;
       checkStep2();
@@ -665,38 +650,38 @@ function generateTimeSlots() {
 }
 
 (function() {
-  const d = new Date();
+  var d = new Date();
   document.getElementById('rdvDate').setAttribute('min', d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'));
 })();
 
 function checkStep2() {
-  const n = document.getElementById('userName').value.trim();
-  const p = document.getElementById('userPhone').value.trim();
-  const e = document.getElementById('userEmail').value.trim();
-  const d = document.getElementById('rdvDate').value;
+  var n = document.getElementById('userName').value.trim();
+  var p = document.getElementById('userPhone').value.trim();
+  var e = document.getElementById('userEmail').value.trim();
+  var d = document.getElementById('rdvDate').value;
   document.getElementById('btnStep2').disabled = !(n && p && e && d && selectedTime);
 }
-['userName','userPhone','userEmail','rdvDate'].forEach(id => {
+['userName','userPhone','userEmail','rdvDate'].forEach(function(id) {
   document.getElementById(id).addEventListener('input', checkStep2);
 });
 
 function fillRecap() {
   document.getElementById('recapProblem').textContent = selectedProblem || '—';
-  const dv = document.getElementById('rdvDate').value;
+  var dv = document.getElementById('rdvDate').value;
   if (dv) {
-    const d = new Date(dv);
+    var d = new Date(dv);
     document.getElementById('recapDate').textContent = d.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
   }
   document.getElementById('recapTime').textContent = selectedTime || '—';
   document.getElementById('recapName').textContent = document.getElementById('userName').value || '—';
 }
 
-let stripeInitialized = false;
+var stripeInitialized = false;
 
 function initStripeElements() {
   if (!stripe || stripeInitialized) return;
   stripeInitialized = true;
-  document.getElementById('card-element').innerHTML = '<div class="py-3 px-2 text-forest-400 text-sm">Chargement du formulaire sécurisé…</div>';
+  document.getElementById('card-element').innerHTML = '<div class="py-3 px-2 text-forest-400 text-sm">Chargement…</div>';
 
   fetch('/create-payment', {
     method: 'POST',
@@ -712,9 +697,11 @@ function initStripeElements() {
       method: 'pending'
     })
   })
-  .then(res => { if (!res.ok) throw new Error('Erreur serveur ' + res.status); return res.json(); })
-  .then(data => {
+  .then(function(res) { if (!res.ok) throw new Error('Erreur ' + res.status); return res.json(); })
+  .then(function(data) {
     clientSecret = data.clientSecret;
+
+    // Card Element (simple, pas de redirect)
     elements = stripe.elements({
       clientSecret: clientSecret,
       appearance: {
@@ -728,26 +715,32 @@ function initStripeElements() {
         }
       }
     });
-    cardElement = elements.create('payment', {
-      fields: { billingDetails: { name:'never', email:'never', phone:'never', address:'never' } }
+
+    cardElement = elements.create('card', {
+      hidePostalCode: true
     });
     cardElement.mount('#card-element');
+
     cardElement.on('change', function(event) {
-      const errEl = document.getElementById('card-errors');
-      if (event.error) { errEl.textContent = event.error.message; errEl.classList.remove('hidden'); }
-      else { errEl.classList.add('hidden'); }
+      var errEl = document.getElementById('card-errors');
+      if (event.error) {
+        errEl.textContent = event.error.message;
+        errEl.classList.remove('hidden');
+      } else {
+        errEl.classList.add('hidden');
+      }
     });
   })
-  .catch(err => {
-    console.error('Erreur init Stripe:', err);
+  .catch(function(err) {
+    console.error('Erreur Stripe:', err);
     document.getElementById('card-element').innerHTML =
       '<div class="py-4 px-4 text-red-500 text-sm bg-red-50 rounded-xl">Impossible de charger le paiement sécurisé.</div>';
   });
 }
 
 async function handlePayment() {
-  if (!stripe || !elements || !clientSecret) {
-    showToast('Le paiement n\'est pas encore prêt. Patientez…', 'error');
+  if (!stripe || !cardElement || !clientSecret) {
+    showToast('Patientez, le formulaire n\'est pas prêt.', 'error');
     return;
   }
 
@@ -757,12 +750,9 @@ async function handlePayment() {
   document.getElementById('payBtnLoading').classList.remove('hidden');
 
   try {
-    var result = await stripe.confirmPayment({
-      elements: elements,
-      confirmParams: {
-        return_url: window.location.origin + window.location.pathname
-      },
-      redirect: 'if_required'
+    // confirmCardPayment : jamais de redirect, tout en JS
+    var result = await stripe.confirmCardPayment(clientSecret, {
+      payment_method: { card: cardElement }
     });
 
     btnPay.disabled = false;
@@ -774,7 +764,6 @@ async function handlePayment() {
       document.getElementById('card-errors').classList.remove('hidden');
       showToast('Paiement refusé : ' + result.error.message, 'error');
     } else {
-      // Succès sans redirect (pas de 3D-Secure)
       paymentSucceeded = true;
       showToast('✅ Paiement accepté !');
       setTimeout(function() { goToStep(4); }, 600);
@@ -783,13 +772,13 @@ async function handlePayment() {
     btnPay.disabled = false;
     document.getElementById('payBtnContent').classList.remove('hidden');
     document.getElementById('payBtnLoading').classList.add('hidden');
-    console.error('Erreur paiement:', err);
-    showToast('Erreur lors du paiement. Réessayez.', 'error');
+    console.error('Erreur:', err);
+    showToast('Erreur lors du paiement.', 'error');
   }
 }
 
 function selectMethod(el) {
-  document.querySelectorAll('.method-card').forEach(c => c.classList.remove('selected'));
+  document.querySelectorAll('.method-card').forEach(function(c) { c.classList.remove('selected'); });
   el.classList.add('selected');
   selectedMethod = el.dataset.method;
   var cb = document.getElementById('consentBlock');
