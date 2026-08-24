@@ -1,108 +1,126 @@
-// ─────────────────────────────────────────────
-//  server.js — Backend Stripe pour TechAssist
-// ─────────────────────────────────────────────
-//  npm init -y
-//  npm install express stripe cors dotenv
-//  node server.js
-// ─────────────────────────────────────────────
-
 require('dotenv').config();
 const express = require('express');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const cors = require('cors');
+const nodemailer = require('nodemailer');
 
 const app = express();
 app.use(cors());
-app.use(express.json());
-app.use(express.static('public')); // placez votre index.html dans /public
+// ⚠️ PAS de app.use(express.json()) ici — on le met route par route
+app.use(express.static('public'));
 
-// ── Créer une intention de paiement ──
-app.post('/create-payment', async (req, res) => {
+// ── EMAIL ──
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  }
+});
+
+async function sendConfirmationEmail(data) {
+  var methodLabels = {
+    telephone: 'Par téléphone',
+    whatsapp: 'Par WhatsApp',
+    visio: 'Par visioconférence',
+    remote: 'Par prise en main à distance',
+    physical: 'Par intervention physique'
+  };
+
+  var teamviewerBlock = '';
+  if (data.method === 'remote') {
+    teamviewerBlock = '<div style="background:#f0fdf4;border:2px solid #10b981;border-radius:12px;padding:20px;margin-top:20px;text-align:center">' +
+      '<h3 style="color:#065f46;margin:0 0 10px 0">Prise en main a distance</h3>' +
+      '<p style="color:#047857;margin:0 0 15px 0;font-size:14px">Telechargez TeamViewer QuickSupport puis communiquez votre ID au technicien.</p>' +
+      '<a href="https://download.teamviewer.com/download/TeamViewerQS.exe" style="display:inline-block;background:#065f46;color:#fff;padding:12px 24px;border-radius:999px;text-decoration:none;font-weight:600;font-size:14px">Telecharger TeamViewer QuickSupport</a>' +
+      '</div>';
+  }
+
+  var mailOptions = {
+    from: '"TechAssist" <' + process.env.EMAIL_USER + '>',
+    to: data.email,
+    subject: 'Confirmation de votre rendez-vous TechAssist',
+    html: '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#f9fafb;border-radius:16px;overflow:hidden">' +
+      '<div style="background:#0a1814;padding:30px;text-align:center">' +
+      '<h1 style="color:#10b981;margin:0;font-size:24px">TechAssist</h1>' +
+      '<p style="color:#96c3ad;margin:5px 0 0 0;font-size:14px">Assistance informatique</p>' +
+      '</div>' +
+      '<div style="padding:30px">' +
+      '<h2 style="color:#022c22;margin:0 0 20px 0">Votre rendez-vous est confirme</h2>' +
+      '<table style="width:100%;border-collapse:collapse;font-size:14px">' +
+      '<tr><td style="padding:10px 0;color:#6b7280;border-bottom:1px solid #e5e7eb;width:140px">Probleme</td><td style="padding:10px 0;color:#022c22;border-bottom:1px solid #e5e7eb;font-weight:600">' + data.problem + '</td></tr>' +
+      '<tr><td style="padding:10px 0;color:#6b7280;border-bottom:1px solid #e5e7eb">Date</td><td style="padding:10px 0;color:#022c22;border-bottom:1px solid #e5e7eb;font-weight:600">' + data.date + ' a ' + data.time + '</td></tr>' +
+      '<tr><td style="padding:10px 0;color:#6b7280;border-bottom:1px solid #e5e7eb">Nom</td><td style="padding:10px 0;color:#022c22;border-bottom:1px solid #e5e7eb;font-weight:600">' + data.name + '</td></tr>' +
+      '<tr><td style="padding:10px 0;color:#6b7280;border-bottom:1px solid #e5e7eb">Assistance</td><td style="padding:10px 0;color:#022c22;border-bottom:1px solid #e5e7eb;font-weight:600">' + (methodLabels[data.method] || data.method) + '</td></tr>' +
+      '<tr><td style="padding:10px 0;color:#6b7280">Montant</td><td style="padding:10px 0;color:#10b981;font-weight:700;font-size:18px">39 EUR</td></tr>' +
+      '</table>' +
+      teamviewerBlock +
+      '<p style="color:#6b7280;font-size:13px;margin-top:25px">Pour nous contacter : 06 00 00 00 00</p>' +
+      '</div>' +
+      '<div style="background:#f3f4f6;padding:20px;text-align:center;color:#9ca3af;font-size:12px">2025 TechAssist</div>' +
+      '</div>'
+  };
+
+  await transporter.sendMail(mailOptions);
+  console.log('Email envoye a ' + data.email);
+}
+
+// ── CRÉER PAIEMENT (json) ──
+app.post('/create-payment', express.json(), async (req, res) => {
   try {
-    const { amount, problem, name, email, phone, date, time, method } = req.body;
-
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: amount, // en centimes (3900 = 39,00 €)
+      amount: req.body.amount,
       currency: 'eur',
       automatic_payment_methods: { enabled: true },
       metadata: {
-        problem,
-        name,
-        email,
-        phone,
-        date,
-        time,
-        method
+        problem: req.body.problem,
+        name: req.body.name,
+        email: req.body.email,
+        phone: req.body.phone,
+        date: req.body.date,
+        time: req.body.time,
+        method: req.body.method
       }
     });
-
     res.json({ clientSecret: paymentIntent.client_secret });
   } catch (err) {
-    console.error('Erreur création paiement:', err);
+    console.error('Erreur paiement:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ── Webhook : confirmation de paiement ──
+// ── WEBHOOK (raw, AVANT json) ──
 app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   const sig = req.headers['stripe-signature'];
   let event;
-
   try {
     event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
   } catch (err) {
-    console.error('Webhook signature invalide:', err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
+    console.error('Webhook invalide:', err.message);
+    return res.status(400).send('Webhook Error');
   }
 
-  // ── Paiement réussi ──
   if (event.type === 'payment_intent.succeeded') {
     const pi = event.data.object;
     const meta = pi.metadata;
-
-    console.log('✅ Paiement reçu !');
-    console.log('  Client :', meta.name);
-    console.log('  Email  :', meta.email);
-    console.log('  Problème:', meta.problem);
-    console.log('  Montant :', (pi.amount / 100).toFixed(2), '€');
-    console.log('  Méthode assistance:', meta.method);
-    console.log('  RDV    :', meta.date, 'à', meta.time);
-
-    // ── ICI : votre logique métier ──
-    // - Envoyer un email de confirmation (avec Nodemailer, SendGrid, etc.)
-    // - Créer le RDV dans votre base de données
-    // - Envoyer un SMS de confirmation
-    // - Notifier le technicien
-    //
-    // Exemple avec Nodemailer :
-    //
-    // const nodemailer = require('nodemailer');
-    // const transporter = nodemailer.createTransport({
-    //   service: 'gmail',
-    //   auth: { user: process.env.EMAIL, pass: process.env.EMAIL_PASS }
-    // });
-    // await transporter.sendMail({
-    //   from: '"TechAssist" <contact@techassist.fr>',
-    //   to: meta.email,
-    //   subject: 'Confirmation de votre rendez-vous',
-    //   html: `<h1>Bonjour ${meta.name}</h1>
-    //          <p>Votre RDV est confirmé pour le ${meta.date} à ${meta.time}.</p>
-    //          <p>Problème : ${meta.problem}</p>
-    //          <p>Montant : ${(pi.amount/100).toFixed(2)} €</p>`
-    // });
-  }
-
-  // ── Paiement échoué ──
-  if (event.type === 'payment_intent.payment_failed') {
-    const pi = event.data.object;
-    console.log('❌ Paiement échoué pour:', pi.metadata.email);
+    console.log('Paiement recu : ' + meta.email);
+    try {
+      await sendConfirmationEmail({
+        problem: meta.problem,
+        name: meta.name,
+        email: meta.email,
+        phone: meta.phone,
+        date: meta.date,
+        time: meta.time,
+        method: meta.method
+      });
+    } catch (err) {
+      console.error('Erreur email:', err.message);
+    }
   }
 
   res.json({ received: true });
 });
 
-// ── Démarrage ──
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 Serveur TechAssist lancé sur http://localhost:${PORT}`);
-});
+app.listen(PORT, () => console.log('Serveur lance sur le port ' + PORT));
