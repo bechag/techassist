@@ -569,241 +569,264 @@
   <script>
     const STRIPE_PK = 'pk_test_51U6oxGPkH5XXLn4AB8i75QkqHzMWkLUu8fxqqEYF0IkAnez2Oiw3E76QW8zAc8t54faMMALtnHnx4NjW2sUa3mKa00fN8FsJRP';
 
-    let stripe, elements, cardElement, clientSecret = null;
-    try { stripe = Stripe(STRIPE_PK); } catch(e) { console.warn('Stripe non initialisé :', e); }
+let stripe, elements, cardElement, clientSecret = null;
+try { stripe = Stripe(STRIPE_PK); } catch(e) { console.warn('Stripe non initialisé :', e); }
 
-    let currentStep = 0;
-    let selectedProblem = '';
-    let selectedMethod = '';
-    let selectedTime = '';
-    let paymentSucceeded = false;
+let currentStep = 0;
+let selectedProblem = '';
+let selectedMethod = '';
+let selectedTime = '';
+let paymentSucceeded = false;
 
-    function goToStep(step) {
-      if ((step === 4 || step === 5) && !paymentSucceeded && step !== 0) {
-        showToast('Veuillez d\'abord effectuer le paiement.', 'error');
-        return;
+// ── DÉTECTION RETOUR STRIPE (après redirect 3D-Secure) ──
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('redirect_status') === 'succeeded') {
+    paymentSucceeded = true;
+    window.history.replaceState({}, '', window.location.pathname);
+  }
+})();
+
+function goToStep(step) {
+  if ((step === 4 || step === 5) && !paymentSucceeded && step !== 0) {
+    showToast('Veuillez d\'abord effectuer le paiement.', 'error');
+    return;
+  }
+  document.querySelectorAll('.step-section').forEach(s => s.classList.remove('active'));
+  const target = document.getElementById('step' + step);
+  if (target) { target.classList.add('active'); currentStep = step; }
+  const pc = document.getElementById('progressContainer');
+  if (step >= 1 && step <= 4) { pc.classList.remove('hidden'); updateProgress(step); }
+  else { pc.classList.add('hidden'); }
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (step === 3) { fillRecap(); initStripeElements(); }
+  if (step === 5) fillFinal();
+}
+
+// ── Si on revient d'un paiement réussi, aller direct à l'étape 4 ──
+if (paymentSucceeded) {
+  document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(function() { goToStep(4); }, 300);
+  });
+}
+
+function updateProgress(step) {
+  const pct = step * 20;
+  document.getElementById('progressBar').style.width = pct + '%';
+  document.getElementById('stepLabel').textContent = 'Étape ' + step + '/5';
+  document.getElementById('stepPercent').textContent = pct + '%';
+  for (let i = 1; i <= 5; i++) {
+    const el = document.getElementById('s' + i);
+    if (el) el.className = i <= step ? 'text-emerald-600' : '';
+  }
+}
+
+function selectProblem(el) {
+  document.querySelectorAll('.problem-card').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedProblem = el.dataset.problem;
+  document.getElementById('btnStep1').disabled = false;
+}
+
+function generateTimeSlots() {
+  const dateInput = document.getElementById('rdvDate');
+  const container = document.getElementById('timeSlotsContainer');
+  if (!dateInput.value) {
+    container.innerHTML = '<div class="text-sm text-forest-400 col-span-3 py-4 text-center">Sélectionnez une date d\'abord</div>';
+    return;
+  }
+  const selected = new Date(dateInput.value);
+  const today = new Date(); today.setHours(0,0,0,0);
+  if (selected < today) {
+    container.innerHTML = '<div class="text-sm text-red-500 col-span-3 py-4 text-center">Veuillez choisir une date future</div>';
+    return;
+  }
+  const slots = ['09:00','09:30','10:00','10:30','11:00','11:30','14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00','18:30','19:00'];
+  const isToday = selected.getTime() === today.getTime();
+  const nowH = new Date().getHours(), nowM = new Date().getMinutes();
+  container.innerHTML = '';
+  slots.forEach(slot => {
+    const [h, m] = slot.split(':').map(Number);
+    if (isToday && (h < nowH || (h === nowH && m <= nowM))) return;
+    const div = document.createElement('div');
+    div.className = 'time-slot cursor-pointer text-center py-2.5 px-2 rounded-xl border-2 border-forest-200/50 text-sm font-medium text-forest-700';
+    div.textContent = slot;
+    div.onclick = function() {
+      document.querySelectorAll('.time-slot').forEach(s => s.classList.remove('selected'));
+      this.classList.add('selected');
+      selectedTime = slot;
+      checkStep2();
+    };
+    container.appendChild(div);
+  });
+  if (!container.children.length) {
+    container.innerHTML = '<div class="text-sm text-forest-400 col-span-3 py-4 text-center">Plus de créneaux disponibles aujourd\'hui</div>';
+  }
+}
+
+(function() {
+  const d = new Date();
+  document.getElementById('rdvDate').setAttribute('min', d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'));
+})();
+
+function checkStep2() {
+  const n = document.getElementById('userName').value.trim();
+  const p = document.getElementById('userPhone').value.trim();
+  const e = document.getElementById('userEmail').value.trim();
+  const d = document.getElementById('rdvDate').value;
+  document.getElementById('btnStep2').disabled = !(n && p && e && d && selectedTime);
+}
+['userName','userPhone','userEmail','rdvDate'].forEach(id => {
+  document.getElementById(id).addEventListener('input', checkStep2);
+});
+
+function fillRecap() {
+  document.getElementById('recapProblem').textContent = selectedProblem || '—';
+  const dv = document.getElementById('rdvDate').value;
+  if (dv) {
+    const d = new Date(dv);
+    document.getElementById('recapDate').textContent = d.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  }
+  document.getElementById('recapTime').textContent = selectedTime || '—';
+  document.getElementById('recapName').textContent = document.getElementById('userName').value || '—';
+}
+
+let stripeInitialized = false;
+
+function initStripeElements() {
+  if (!stripe || stripeInitialized) return;
+  stripeInitialized = true;
+  document.getElementById('card-element').innerHTML = '<div class="py-3 px-2 text-forest-400 text-sm">Chargement du formulaire sécurisé…</div>';
+
+  fetch('/create-payment', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      amount: 3900,
+      problem: selectedProblem,
+      name: document.getElementById('userName').value,
+      email: document.getElementById('userEmail').value,
+      phone: document.getElementById('userPhone').value,
+      date: document.getElementById('rdvDate').value,
+      time: selectedTime,
+      method: 'pending'
+    })
+  })
+  .then(res => { if (!res.ok) throw new Error('Erreur serveur ' + res.status); return res.json(); })
+  .then(data => {
+    clientSecret = data.clientSecret;
+    elements = stripe.elements({
+      clientSecret: clientSecret,
+      appearance: {
+        theme: 'stripe',
+        variables: {
+          colorPrimary: '#10b981',
+          colorBackground: '#f2f8f6',
+          colorText: '#022c22',
+          fontFamily: '"DM Sans", sans-serif',
+          borderRadius: '8px'
+        }
       }
-      document.querySelectorAll('.step-section').forEach(s => s.classList.remove('active'));
-      const target = document.getElementById('step' + step);
-      if (target) { target.classList.add('active'); currentStep = step; }
-      const pc = document.getElementById('progressContainer');
-      if (step >= 1 && step <= 4) { pc.classList.remove('hidden'); updateProgress(step); }
-      else { pc.classList.add('hidden'); }
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      if (step === 3) { fillRecap(); initStripeElements(); }
-      if (step === 5) fillFinal();
-    }
+    });
+    cardElement = elements.create('payment', {
+      fields: { billingDetails: { name:'never', email:'never', phone:'never', address:'never' } }
+    });
+    cardElement.mount('#card-element');
+    cardElement.on('change', function(event) {
+      const errEl = document.getElementById('card-errors');
+      if (event.error) { errEl.textContent = event.error.message; errEl.classList.remove('hidden'); }
+      else { errEl.classList.add('hidden'); }
+    });
+  })
+  .catch(err => {
+    console.error('Erreur init Stripe:', err);
+    document.getElementById('card-element').innerHTML =
+      '<div class="py-4 px-4 text-red-500 text-sm bg-red-50 rounded-xl">Impossible de charger le paiement sécurisé.</div>';
+  });
+}
 
-    function updateProgress(step) {
-      const pct = step * 20;
-      document.getElementById('progressBar').style.width = pct + '%';
-      document.getElementById('stepLabel').textContent = 'Étape ' + step + '/5';
-      document.getElementById('stepPercent').textContent = pct + '%';
-      for (let i = 1; i <= 5; i++) {
-        const el = document.getElementById('s' + i);
-        if (el) el.className = i <= step ? 'text-emerald-600' : '';
-      }
-    }
+async function handlePayment() {
+  if (!stripe || !elements || !clientSecret) {
+    showToast('Le paiement n\'est pas encore prêt. Patientez…', 'error');
+    return;
+  }
 
-    function selectProblem(el) {
-      document.querySelectorAll('.problem-card').forEach(c => c.classList.remove('selected'));
-      el.classList.add('selected');
-      selectedProblem = el.dataset.problem;
-      document.getElementById('btnStep1').disabled = false;
-    }
+  var btnPay = document.getElementById('btnPay');
+  btnPay.disabled = true;
+  document.getElementById('payBtnContent').classList.add('hidden');
+  document.getElementById('payBtnLoading').classList.remove('hidden');
 
-    function generateTimeSlots() {
-      const dateInput = document.getElementById('rdvDate');
-      const container = document.getElementById('timeSlotsContainer');
-      if (!dateInput.value) {
-        container.innerHTML = '<div class="text-sm text-forest-400 col-span-3 py-4 text-center">Sélectionnez une date d\'abord</div>';
-        return;
-      }
-      const selected = new Date(dateInput.value);
-      const today = new Date(); today.setHours(0,0,0,0);
-      if (selected < today) {
-        container.innerHTML = '<div class="text-sm text-red-500 col-span-3 py-4 text-center">Veuillez choisir une date future</div>';
-        return;
-      }
-      const slots = ['09:00','09:30','10:00','10:30','11:00','11:30','14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00','18:30','19:00'];
-      const isToday = selected.getTime() === today.getTime();
-      const nowH = new Date().getHours(), nowM = new Date().getMinutes();
-      container.innerHTML = '';
-      slots.forEach(slot => {
-        const [h, m] = slot.split(':').map(Number);
-        if (isToday && (h < nowH || (h === nowH && m <= nowM))) return;
-        const div = document.createElement('div');
-        div.className = 'time-slot cursor-pointer text-center py-2.5 px-2 rounded-xl border-2 border-forest-200/50 text-sm font-medium text-forest-700';
-        div.textContent = slot;
-        div.onclick = function() {
-          document.querySelectorAll('.time-slot').forEach(s => s.classList.remove('selected'));
-          this.classList.add('selected');
-          selectedTime = slot;
-          checkStep2();
-        };
-        container.appendChild(div);
-      });
-      if (!container.children.length) {
-        container.innerHTML = '<div class="text-sm text-forest-400 col-span-3 py-4 text-center">Plus de créneaux disponibles aujourd\'hui</div>';
-      }
-    }
-
-    (function() {
-      const d = new Date();
-      document.getElementById('rdvDate').setAttribute('min', d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'));
-    })();
-
-    function checkStep2() {
-      const n = document.getElementById('userName').value.trim();
-      const p = document.getElementById('userPhone').value.trim();
-      const e = document.getElementById('userEmail').value.trim();
-      const d = document.getElementById('rdvDate').value;
-      document.getElementById('btnStep2').disabled = !(n && p && e && d && selectedTime);
-    }
-    ['userName','userPhone','userEmail','rdvDate'].forEach(id => {
-      document.getElementById(id).addEventListener('input', checkStep2);
+  try {
+    var result = await stripe.confirmPayment({
+      elements: elements,
+      confirmParams: {
+        return_url: window.location.origin + window.location.pathname
+      },
+      redirect: 'if_required'
     });
 
-    function fillRecap() {
-      document.getElementById('recapProblem').textContent = selectedProblem || '—';
-      const dv = document.getElementById('rdvDate').value;
-      if (dv) {
-        const d = new Date(dv);
-        document.getElementById('recapDate').textContent = d.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-      }
-      document.getElementById('recapTime').textContent = selectedTime || '—';
-      document.getElementById('recapName').textContent = document.getElementById('userName').value || '—';
+    btnPay.disabled = false;
+    document.getElementById('payBtnContent').classList.remove('hidden');
+    document.getElementById('payBtnLoading').classList.add('hidden');
+
+    if (result.error) {
+      document.getElementById('card-errors').textContent = result.error.message;
+      document.getElementById('card-errors').classList.remove('hidden');
+      showToast('Paiement refusé : ' + result.error.message, 'error');
+    } else {
+      // Succès sans redirect (pas de 3D-Secure)
+      paymentSucceeded = true;
+      showToast('✅ Paiement accepté !');
+      setTimeout(function() { goToStep(4); }, 600);
     }
+  } catch(err) {
+    btnPay.disabled = false;
+    document.getElementById('payBtnContent').classList.remove('hidden');
+    document.getElementById('payBtnLoading').classList.add('hidden');
+    console.error('Erreur paiement:', err);
+    showToast('Erreur lors du paiement. Réessayez.', 'error');
+  }
+}
 
-    let stripeInitialized = false;
+function selectMethod(el) {
+  document.querySelectorAll('.method-card').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedMethod = el.dataset.method;
+  var cb = document.getElementById('consentBlock');
+  if (selectedMethod === 'remote') { cb.classList.remove('hidden'); document.getElementById('consentCheck').checked = false; }
+  else { cb.classList.add('hidden'); }
+  checkStep4();
+}
 
-    function initStripeElements() {
-      if (!stripe || stripeInitialized) return;
-      stripeInitialized = true;
-      document.getElementById('card-element').innerHTML = '<div class="py-3 px-2 text-forest-400 text-sm">Chargement du formulaire sécurisé…</div>';
+function checkStep4() {
+  if (!selectedMethod) { document.getElementById('btnStep4').disabled = true; return; }
+  document.getElementById('btnStep4').disabled = (selectedMethod === 'remote' && !document.getElementById('consentCheck').checked);
+}
 
-      fetch('/create-payment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: 3900,
-          problem: selectedProblem,
-          name: document.getElementById('userName').value,
-          email: document.getElementById('userEmail').value,
-          phone: document.getElementById('userPhone').value,
-          date: document.getElementById('rdvDate').value,
-          time: selectedTime,
-          method: 'pending'
-        })
-      })
-      .then(res => { if (!res.ok) throw new Error('Erreur serveur ' + res.status); return res.json(); })
-      .then(data => {
-        clientSecret = data.clientSecret;
-        elements = stripe.elements({
-          clientSecret: clientSecret,
-          appearance: {
-            theme: 'stripe',
-            variables: {
-              colorPrimary: '#10b981',
-              colorBackground: '#f2f8f6',
-              colorText: '#022c22',
-              fontFamily: '"DM Sans", sans-serif',
-              borderRadius: '8px'
-            }
-          }
-        });
-        cardElement = elements.create('payment', {
-          fields: { billingDetails: { name:'never', email:'never', phone:'never', address:'never' } }
-        });
-        cardElement.mount('#card-element');
-        cardElement.on('change', function(event) {
-          const errEl = document.getElementById('card-errors');
-          if (event.error) { errEl.textContent = event.error.message; errEl.classList.remove('hidden'); }
-          else { errEl.classList.add('hidden'); }
-        });
-      })
-      .catch(err => {
-        console.error('Erreur init Stripe:', err);
-        document.getElementById('card-element').innerHTML =
-          '<div class="py-4 px-4 text-red-500 text-sm bg-red-50 rounded-xl">Impossible de charger le paiement sécurisé. Vérifiez que le serveur est lancé et votre clé Stripe configurée.</div>';
-      });
-    }
+function fillFinal() {
+  document.getElementById('finalProblem').textContent = selectedProblem;
+  var dv = document.getElementById('rdvDate').value;
+  if (dv) {
+    var d = new Date(dv);
+    document.getElementById('finalDateTime').textContent = d.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'}) + ' à ' + selectedTime;
+  }
+  document.getElementById('finalName').textContent = document.getElementById('userName').value;
+  var labels = { telephone:'📞 Par téléphone', whatsapp:'💬 Par WhatsApp', visio:'🎥 Par visioconférence', remote:'🖥️ Prise en main à distance', physical:'🏠 Intervention physique' };
+  document.getElementById('finalMethod').textContent = labels[selectedMethod] || selectedMethod;
+  ['connectPhone','connectWhatsapp','connectVisio','connectRemote','connectPhysical'].forEach(function(id) { document.getElementById(id).classList.add('hidden'); });
+  var map = { telephone:'connectPhone', whatsapp:'connectWhatsapp', visio:'connectVisio', remote:'connectRemote', physical:'connectPhysical' };
+  if (map[selectedMethod]) document.getElementById(map[selectedMethod]).classList.remove('hidden');
+}
 
-    async function handlePayment() {
-      if (!stripe || !elements || !clientSecret) {
-        showToast('Le paiement n\'est pas encore prêt. Patientez…', 'error');
-        return;
-      }
-      const btnPay = document.getElementById('btnPay');
-      btnPay.disabled = true;
-      document.getElementById('payBtnContent').classList.add('hidden');
-      document.getElementById('payBtnLoading').classList.remove('hidden');
+function showToast(msg, type) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast' + (type === 'error' ? ' error' : '');
+  requestAnimationFrame(function() { t.classList.add('show'); });
+  setTimeout(function() { t.classList.remove('show'); }, 4000);
+}
 
-      const { error, paymentIntent } = await stripe.confirmPayment({
-        elements,
-        confirmParams: {
-          return_url: window.location.href
-        },
-        redirect: 'if_required'
-      });
-
-      btnPay.disabled = false;
-      document.getElementById('payBtnContent').classList.remove('hidden');
-      document.getElementById('payBtnLoading').classList.add('hidden');
-
-      if (error) {
-        document.getElementById('card-errors').textContent = error.message;
-        document.getElementById('card-errors').classList.remove('hidden');
-        showToast('Paiement refusé : ' + error.message, 'error');
-      } else {
-        paymentSucceeded = true;
-        showToast('✅ Paiement accepté !');
-        setTimeout(() => goToStep(4), 500);
-      }
-    }
-
-    function selectMethod(el) {
-      document.querySelectorAll('.method-card').forEach(c => c.classList.remove('selected'));
-      el.classList.add('selected');
-      selectedMethod = el.dataset.method;
-      const cb = document.getElementById('consentBlock');
-      if (selectedMethod === 'remote') { cb.classList.remove('hidden'); document.getElementById('consentCheck').checked = false; }
-      else { cb.classList.add('hidden'); }
-      checkStep4();
-    }
-
-    function checkStep4() {
-      if (!selectedMethod) { document.getElementById('btnStep4').disabled = true; return; }
-      document.getElementById('btnStep4').disabled = (selectedMethod === 'remote' && !document.getElementById('consentCheck').checked);
-    }
-
-    function fillFinal() {
-      document.getElementById('finalProblem').textContent = selectedProblem;
-      const dv = document.getElementById('rdvDate').value;
-      if (dv) {
-        const d = new Date(dv);
-        document.getElementById('finalDateTime').textContent = d.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'}) + ' à ' + selectedTime;
-      }
-      document.getElementById('finalName').textContent = document.getElementById('userName').value;
-      const labels = { telephone:'📞 Par téléphone', whatsapp:'💬 Par WhatsApp', visio:'🎥 Par visioconférence', remote:'🖥️ Prise en main à distance', physical:'🏠 Intervention physique' };
-      document.getElementById('finalMethod').textContent = labels[selectedMethod] || selectedMethod;
-      ['connectPhone','connectWhatsapp','connectVisio','connectRemote','connectPhysical'].forEach(id => document.getElementById(id).classList.add('hidden'));
-      const map = { telephone:'connectPhone', whatsapp:'connectWhatsapp', visio:'connectVisio', remote:'connectRemote', physical:'connectPhysical' };
-      if (map[selectedMethod]) document.getElementById(map[selectedMethod]).classList.remove('hidden');
-    }
-
-    function showToast(msg, type) {
-      const t = document.getElementById('toast');
-      t.textContent = msg;
-      t.className = 'toast' + (type === 'error' ? ' error' : '');
-      requestAnimationFrame(() => t.classList.add('show'));
-      setTimeout(() => t.classList.remove('show'), 4000);
-    }
-
-    const obs = new IntersectionObserver(entries => {
-      entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('is-visible'); });
-    }, { threshold: 0.1 });
-    document.querySelectorAll('.reveal-on-scroll').forEach(el => obs.observe(el));
-  </script>
-</body>
-</html>
+var obs = new IntersectionObserver(function(entries) {
+  entries.forEach(function(e) { if (e.isIntersecting) e.target.classList.add('is-visible'); });
+}, { threshold: 0.1 });
+document.querySelectorAll('.reveal-on-scroll').forEach(function(el) { obs.observe(el); });
