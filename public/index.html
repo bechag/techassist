@@ -815,41 +815,37 @@
     }
 
     async function handlePayment() {
-      if (!stripe || !elements || !clientSecret) {
-        showToast('Le paiement n\'est pas encore prêt. Patientez…', 'error');
-        return;
-      }
-      const btnPay = document.getElementById('btnPay');
-      btnPay.disabled = true;
-      document.getElementById('payBtnContent').classList.add('hidden');
-      document.getElementById('payBtnLoading').classList.remove('hidden');
+  if (!stripe || !elements || !clientSecret) {
+    showToast('Le paiement n\'est pas encore prêt. Patientez…', 'error');
+    return;
+  }
 
-      const { error } = await stripe.confirmPayment({
-        elements,
-        confirmParams: {
-          return_url: window.location.origin + window.location.pathname + '?payment=success'
-        }
-      });
+  const btnPay = document.getElementById('btnPay');
+  btnPay.disabled = true;
+  document.getElementById('payBtnContent').classList.add('hidden');
+  document.getElementById('payBtnLoading').classList.remove('hidden');
 
-      btnPay.disabled = false;
-      document.getElementById('payBtnContent').classList.remove('hidden');
-      document.getElementById('payBtnLoading').classList.add('hidden');
+  const { error, paymentIntent } = await stripe.confirmPayment({
+    elements,
+    confirmParams: {
+      return_url: window.location.href
+    },
+    redirect: 'if_required'
+  });
 
-      if (error) {
-        document.getElementById('card-errors').textContent = error.message;
-        document.getElementById('card-errors').classList.remove('hidden');
-        showToast('Paiement refusé : ' + error.message, 'error');
-      }
-    }
+  btnPay.disabled = false;
+  document.getElementById('payBtnContent').classList.remove('hidden');
+  document.getElementById('payBtnLoading').classList.add('hidden');
 
-    // Detection du retour après paiement
-    (function() {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('payment') === 'success' && params.get('redirect_status') === 'succeeded') {
-        paymentSucceeded = true;
-        window.history.replaceState({}, '', window.location.pathname);
-        setTimeout(() => goToStep(5), 300);
-      }
+  if (error) {
+    document.getElementById('card-errors').textContent = error.message;
+    document.getElementById('card-errors').classList.remove('hidden');
+    showToast('Paiement refusé : ' + error.message, 'error');
+  } else {
+    paymentSucceeded = true;
+    showToast('✅ Paiement accepté !');
+    goToStep(4);
+  }
     })();
 
     // ── STEP 4 : ASSISTANCE ──
